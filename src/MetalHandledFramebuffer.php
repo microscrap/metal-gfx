@@ -10,6 +10,7 @@ use ScrapyardIO\Tubes\Contracts\Framebuffers\Enums\PixelFormat;
 use ScrapyardIO\Tubes\Contracts\Framebuffers\Enums\RenderType;
 use ScrapyardIO\Tubes\Contracts\Framebuffers\FormatSpec;
 use ScrapyardIO\Tubes\Framebuffers\DeferredFramebuffer;
+use ScrapyardIO\Tubes\Framebuffers\PixelStore;
 
 /**
  * Deferred Metal-handled framebuffer.
@@ -17,6 +18,10 @@ use ScrapyardIO\Tubes\Framebuffers\DeferredFramebuffer;
  * Headless {@see sized()}: owns MTLDevice + queue + offscreen RGBA8 MTLTexture.
  * Windowed {@see attachedTo()}: borrows the window's MTLDevice; owns queue + texture;
  * {@see present()} blits the texture to the CAMetalLayer (no PHP flush remux).
+ *
+ * Headless PanelIC: dirty rects → {@see RenderType::PARTIAL} dumps; host RGBA
+ * words pack to IC FormatSpec (fast ROW_MAJOR B16, not per-pixel PixelStore).
+ * Flush shares one {@see mtl_texture_read_rgba8()} across regions.
  */
 class MetalHandledFramebuffer extends DeferredFramebuffer
 {
@@ -29,6 +34,26 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
     protected int $window = 0;
 
     protected bool $owns_device = true;
+
+    /**
+     * Inclusive dirty rectangles [left, top, right, bottom] — coalesced at flush.
+     *
+     * @var array<int, array{0: int, 1: int, 2: int, 3: int}>
+     */
+    protected array $dirty_regions = [];
+
+    /**
+     * When > 0, markDirty unions into {@see $deferred_dirty_union} instead of
+     * appending one rect per primitive (fillCircle hlines thrash coalesce).
+     */
+    protected int $dirty_defer_depth = 0;
+
+    /**
+     * Inclusive union while {@see deferDirty()} is active.
+     *
+     * @var array{0: int, 1: int, 2: int, 3: int}|null
+     */
+    protected ?array $deferred_dirty_union = null;
 
     /**
      * @throws MetalGfxException
@@ -188,6 +213,7 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
     {
         [$r, $g, $b, $a] = $this->rgbaComponents($color);
         mtl_texture_clear($this->texture, $this->queue, $r, $g, $b, $a);
+        $this->markAllDirty();
 
         return $this;
     }
@@ -230,6 +256,7 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
 
         [$r, $g, $b, $a] = $this->rgbaComponents($value);
         mtl_texture_write_pixel($this->texture, $x, $y, $r, $g, $b, $a);
+        $this->markDirty($x, $y, $x, $y);
 
         return $this;
     }
@@ -244,60 +271,340 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
         $y1 = min($this->height, $y + $height);
         $x0 = max(0, $x);
         $y0 = max(0, $y);
+        $cw = $x1 - $x0;
+        $ch = $y1 - $y0;
 
+        if ($cw <= 0 || $ch <= 0) {
+            return $this;
+        }
+
+        [$r, $g, $b, $a] = $this->rgbaComponents($color);
         for ($py = $y0; $py < $y1; $py++) {
             for ($px = $x0; $px < $x1; $px++) {
-                $this->setPixel($px, $py, $color);
+                mtl_texture_write_pixel($this->texture, $px, $py, $r, $g, $b, $a);
             }
         }
+        $this->markDirty($x0, $y0, $x1 - 1, $y1 - 1);
 
         return $this;
     }
 
     public function dump(?int $layer = null): string
     {
-        return mtl_texture_read_rgba8($this->texture, $this->queue);
+        return $this->packRgbaWords($this->readTextureWords(), $this->width, $this->height, $this->host_format);
     }
 
     /**
+     * Flush for PanelIC (headless) — host RGBA8 MTLTexture → target FormatSpec.
+     *
+     * Matching B32 host → chunked pack. ROW_MAJOR B16 (ST7789 RGB565) uses a
+     * tight pack loop — not per-pixel {@see PixelStore} / low-16-bits-as-RGB565.
+     * Dirty rects emit {@see RenderType::PARTIAL} when damage is sparse.
+     * One {@see mtl_texture_read_rgba8()} per flush, shared across regions.
+     *
      * @return string|array<int, DumpedBuffer|int>
      */
     public function flush(FormatSpec $spec, bool $as_array = false): string|array
     {
-        $bytes = mtl_texture_read_rgba8($this->texture, $this->queue);
-        if (
-            ! (
-                $spec->bit_depth === BitDepth::B32
-                && $spec->pixel_format === PixelFormat::ROW_MAJOR
-                && ($spec->endianness ?? Endianness::MSB) === Endianness::MSB
-            )
-        ) {
-            $bytes = $this->packViaPixels($spec);
+        if (! $this->isHeadless()) {
+            $this->present();
+
+            return $as_array ? [] : '';
+        }
+
+        if ($this->dirty_regions === []) {
+            return $as_array ? [] : '';
+        }
+
+        $regions = $this->coalesceDirtyRegions($this->dirty_regions);
+        $this->dirty_regions = [];
+
+        $whole = count($regions) === 1
+            && $regions[0][0] === 0
+            && $regions[0][1] === 0
+            && $regions[0][2] === ($this->width - 1)
+            && $regions[0][3] === ($this->height - 1);
+
+        // One full GPU read shared across FULL / PARTIAL packs in this flush.
+        $fullWords = $this->readTextureWords();
+
+        if ($whole) {
+            $bytes = $this->packRgbaWords($fullWords, $this->width, $this->height, $spec);
+
+            if (! $as_array) {
+                return $bytes;
+            }
+
+            return [
+                new DumpedBuffer(
+                    RenderType::FULL,
+                    $spec,
+                    $bytes,
+                    width: $this->width,
+                    height: $this->height,
+                ),
+            ];
+        }
+
+        $updates = [];
+
+        foreach ($regions as [$left, $top, $right, $bottom]) {
+            $regionW = ($right - $left) + 1;
+            $regionH = ($bottom - $top) + 1;
+            $words = $this->sliceWords($fullWords, $left, $top, $regionW, $regionH);
+            $bytes = $this->packRgbaWords($words, $regionW, $regionH, $spec);
+
+            $updates[] = new DumpedBuffer(
+                RenderType::PARTIAL,
+                $spec,
+                $bytes,
+                origin_x: $left,
+                origin_y: $top,
+                width: $regionW,
+                height: $regionH,
+            );
         }
 
         if (! $as_array) {
-            return $bytes;
+            $joined = '';
+            foreach ($updates as $frame) {
+                $joined .= $frame->raw_data;
+            }
+
+            return $joined;
         }
 
-        return [
-            new DumpedBuffer(
-                RenderType::FULL,
-                $spec,
-                $bytes,
-                width: $this->width,
-                height: $this->height,
-            ),
-        ];
+        return $updates;
+    }
+
+    /**
+     * Collapse many primitive dirty marks into one bbox (circles / text runs).
+     *
+     * @param  callable(): void  $draw
+     */
+    public function deferDirty(callable $draw): static
+    {
+        $this->dirty_defer_depth++;
+
+        try {
+            $draw();
+        } finally {
+            $this->dirty_defer_depth--;
+
+            if ($this->dirty_defer_depth === 0 && ! is_null($this->deferred_dirty_union)) {
+                [$left, $top, $right, $bottom] = $this->deferred_dirty_union;
+                $this->deferred_dirty_union = null;
+                $this->markDirty($left, $top, $right, $bottom);
+            }
+        }
+
+        return $this;
     }
 
     public function damageGranularity(): DamageGranularity
     {
+        // Headless PanelIC path tracks dirty rects → pixel damage (PARTIAL flush).
+        // Window-attached surfaces stay whole-surface (native present, no PHP dump).
+        if ($this->isHeadless()) {
+            return DamageGranularity::pixel($this->width, $this->height);
+        }
+
         return DamageGranularity::wholeSurface($this->width, $this->height);
     }
 
     public function preservesContentsOnPresent(): bool
     {
-        return true;
+        // Offscreen MTLTexture survives present blit; headless PanelIC can PARTIAL.
+        return $this->isHeadless();
+    }
+
+    public function markAllDirty(): static
+    {
+        $this->deferred_dirty_union = null;
+        $this->dirty_regions = [[0, 0, $this->width - 1, $this->height - 1]];
+
+        return $this;
+    }
+
+    protected function markDirty(int $left, int $top, int $right, int $bottom): void
+    {
+        $left = max(0, $left);
+        $top = max(0, $top);
+        $right = min($this->width - 1, $right);
+        $bottom = min($this->height - 1, $bottom);
+
+        if (($left > $right) || ($top > $bottom)) {
+            return;
+        }
+
+        if ($this->dirty_defer_depth > 0) {
+            if (is_null($this->deferred_dirty_union)) {
+                $this->deferred_dirty_union = [$left, $top, $right, $bottom];
+
+                return;
+            }
+
+            $this->deferred_dirty_union[0] = min($this->deferred_dirty_union[0], $left);
+            $this->deferred_dirty_union[1] = min($this->deferred_dirty_union[1], $top);
+            $this->deferred_dirty_union[2] = max($this->deferred_dirty_union[2], $right);
+            $this->deferred_dirty_union[3] = max($this->deferred_dirty_union[3], $bottom);
+
+            return;
+        }
+
+        $this->dirty_regions[] = [$left, $top, $right, $bottom];
+    }
+
+    /**
+     * @param  array<int, array{0: int, 1: int, 2: int, 3: int}>  $regions
+     * @return array<int, array{0: int, 1: int, 2: int, 3: int}>
+     */
+    protected function coalesceDirtyRegions(array $regions): array
+    {
+        if ($regions === []) {
+            return [];
+        }
+
+        $pending = array_values($regions);
+        $merged = [];
+
+        while ($pending !== []) {
+            [$left, $top, $right, $bottom] = array_shift($pending);
+            $grew = true;
+
+            while ($grew) {
+                $grew = false;
+                $next = [];
+
+                foreach ($pending as $region) {
+                    [$region_left, $region_top, $region_right, $region_bottom] = $region;
+                    $touches = ($left <= $region_right + 1) && ($region_left <= $right + 1)
+                        && ($top <= $region_bottom + 1) && ($region_top <= $bottom + 1);
+
+                    if ($touches) {
+                        $left = min($left, $region_left);
+                        $top = min($top, $region_top);
+                        $right = max($right, $region_right);
+                        $bottom = max($bottom, $region_bottom);
+                        $grew = true;
+                    } else {
+                        $next[] = $region;
+                    }
+                }
+
+                $pending = $next;
+            }
+
+            $merged[] = [$left, $top, $right, $bottom];
+        }
+
+        return $merged;
+    }
+
+    /**
+     * Full-surface host words (0xRRGGBBAA) from one GPU readback.
+     *
+     * @return array<int, int>
+     */
+    protected function readTextureWords(): array
+    {
+        $bytes = mtl_texture_read_rgba8($this->texture, $this->queue);
+        if ($bytes === '') {
+            return array_fill(0, max(0, $this->width * $this->height), 0);
+        }
+
+        $words = unpack('N*', $bytes);
+        if ($words === false) {
+            return array_fill(0, max(0, $this->width * $this->height), 0);
+        }
+
+        return array_values($words);
+    }
+
+    /**
+     * @param  array<int, int>  $fullWords
+     * @return array<int, int>
+     */
+    protected function sliceWords(array $fullWords, int $x, int $y, int $width, int $height): array
+    {
+        $sliced = [];
+
+        for ($row = 0; $row < $height; $row++) {
+            $src = (($y + $row) * $this->width) + $x;
+            for ($col = 0; $col < $width; $col++) {
+                $sliced[] = $fullWords[$src + $col] ?? 0;
+            }
+        }
+
+        return $sliced;
+    }
+
+    /**
+     * Pack host RGBA words (0xRRGGBBAA) into a target FormatSpec byte stream.
+     *
+     * Matching B32 MSB → chunked pack. ROW_MAJOR B16 → tight RGB565 (not
+     * low-16-bits-as-RGB565) — avoid per-pixel PixelStore on the PanelIC hot path.
+     *
+     * @param  array<int, int>  $words
+     */
+    protected function packRgbaWords(array $words, int $width, int $height, FormatSpec $spec): string
+    {
+        if (
+            $spec->pixel_format === PixelFormat::ROW_MAJOR
+            && $spec->bit_depth === BitDepth::B32
+            && ($spec->endianness ?? Endianness::MSB) === Endianness::MSB
+        ) {
+            return $this->packWordChunks($words, 'N*');
+        }
+
+        if (
+            $spec->pixel_format === PixelFormat::ROW_MAJOR
+            && $spec->bit_depth === BitDepth::B16
+        ) {
+            $msb = ($spec->endianness ?? Endianness::MSB) !== Endianness::LSB;
+            $packed = [];
+
+            foreach ($words as $word) {
+                $r = ($word >> 24) & 0xFF;
+                $g = ($word >> 16) & 0xFF;
+                $b = ($word >> 8) & 0xFF;
+                $packed[] = (($r & 0xF8) << 8) | (($g & 0xFC) << 3) | ($b >> 3);
+            }
+
+            return $this->packWordChunks($packed, $msb ? 'n*' : 'v*');
+        }
+
+        $temp = new PixelStore($width, $height, $spec, 1);
+        $i = 0;
+
+        for ($row = 0; $row < $height; $row++) {
+            for ($col = 0; $col < $width; $col++) {
+                $temp->setPixel($col, $row, $words[$i] ?? 0);
+                $i++;
+            }
+        }
+
+        return $temp->dump();
+    }
+
+    /**
+     * @param  array<int, int>  $words
+     */
+    protected function packWordChunks(array $words, string $format): string
+    {
+        if ($words === []) {
+            return '';
+        }
+
+        $bytes = '';
+        $chunkSize = 512;
+
+        for ($offset = 0, $count = count($words); $offset < $count; $offset += $chunkSize) {
+            $chunk = array_slice($words, $offset, $chunkSize);
+            $bytes .= pack($format, ...$chunk);
+        }
+
+        return $bytes;
     }
 
     /**
@@ -344,28 +651,5 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
         return ($this->host_format->bit_depth === BitDepth::B1)
             || ($this->host_format->pixel_format === PixelFormat::MONO_VERTICAL_PAGE)
             || ($this->host_format->pixel_format === PixelFormat::MONO_HORIZONTAL);
-    }
-
-    protected function packViaPixels(FormatSpec $spec): string
-    {
-        $bytes = '';
-        for ($y = 0; $y < $this->height; $y++) {
-            for ($x = 0; $x < $this->width; $x++) {
-                $color = $this->getPixel($x, $y);
-                $bytes .= match ($spec->bit_depth) {
-                    BitDepth::B8 => chr($color & 0xFF),
-                    BitDepth::B16 => (($spec->endianness ?? Endianness::MSB) === Endianness::LSB)
-                        ? chr($color & 0xFF).chr(($color >> 8) & 0xFF)
-                        : chr(($color >> 8) & 0xFF).chr($color & 0xFF),
-                    BitDepth::B32 => chr(($color >> 24) & 0xFF)
-                        .chr(($color >> 16) & 0xFF)
-                        .chr(($color >> 8) & 0xFF)
-                        .chr($color & 0xFF),
-                    default => chr(($color >> 16) & 0xFF).chr(($color >> 8) & 0xFF).chr($color & 0xFF),
-                };
-            }
-        }
-
-        return $bytes;
     }
 }

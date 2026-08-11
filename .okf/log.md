@@ -1,5 +1,9 @@
 # OKF log
 
+## 2026-08-11
+
+- **PanelIC dirty+PARTIAL+RGB565**: `MetalHandledFramebuffer` tracks dirty rects; headless `flush` coalesces → `FULL`/`PARTIAL` `DumpedBuffer`s; one shared `mtl_texture_read_rgba8` then slice+pack; fast ROW_MAJOR B32/B16 pack (`0xRRGGBBAA` → RGB565, not low-16 bug); `damageGranularity` pixel when headless; `preservesContentsOnPresent` when headless; `MetalRenderer2D` `fillCircle`/`drawCircle` use `deferDirty`. Pest mirrors ogx/sdl3. Windowed present unchanged.
+
 ## 2026-08-09
 
 - **Human Input**: `MetalInputHandler` snapshots `mtl_input_*` (ext-metal / microscrap/metal **0.7.3**) into Keyboard/Mouse/GameController. `MetalWindowHandler::pollNative()` fans out after `mtl_app_poll`. Window mouse Y flipped to framebuffer top-left. Pest `MetalInputHandlerTest`.

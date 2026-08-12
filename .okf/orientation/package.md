@@ -13,7 +13,7 @@ generated: { by: cursor-agent/grok-4.5, at: "2026-08-09T04:15:00Z" }
 |-------|--------|
 | Composer | `microscrap/metal-gfx` **0.7.0** |
 | PHP | `^8.4\|^8.5\|^8.6` |
-| Requires | `ext-metal` ^0.7.2, `microscrap/metal` ^0.7.2, `scrapyard-io/tubes`, `fabricate/nuts-and-bolts` |
+| Requires | `ext-metal` ^0.7.4, `microscrap/metal` ^0.7.4, `fabricate/nuts-and-bolts`, tubes components: `contracts`, `framebuffers`, `rendering`, `fonts`, `windows`, `human-input`, `inputs` (**not** `scrapyard-io/tubes`) |
 | Namespace | `Microscrap\GFX\Metal\` |
 | Role | Deferred `MetalHandledFramebuffer` + live `MetalWindowHandler` |
 | Platform | **macOS** |

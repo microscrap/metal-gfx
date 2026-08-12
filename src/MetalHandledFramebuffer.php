@@ -279,10 +279,8 @@ class MetalHandledFramebuffer extends DeferredFramebuffer
         }
 
         [$r, $g, $b, $a] = $this->rgbaComponents($color);
-        for ($py = $y0; $py < $y1; $py++) {
-            for ($px = $x0; $px < $x1; $px++) {
-                mtl_texture_write_pixel($this->texture, $px, $py, $r, $g, $b, $a);
-            }
+        if (! mtl_texture_fill_rect($this->texture, $x0, $y0, $cw, $ch, $r, $g, $b, $a)) {
+            throw new MetalGfxException('mtl_texture_fill_rect() failed for MetalHandledFramebuffer::setSegment.');
         }
         $this->markDirty($x0, $y0, $x1 - 1, $y1 - 1);
 

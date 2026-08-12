@@ -8,7 +8,7 @@
         "issues": "https://github.com/microscrap/metal-gfx/issues",
         "source": "https://github.com/microscrap/metal-gfx"
     },
-    "version": "0.7.2",
+    "version": "0.7.3",
     "authors": [
         {
             "name": "Angel Gonzalez",
@@ -17,10 +17,16 @@
     ],
     "require": {
         "php": "^8.4|^8.5|^8.6",
-        "ext-metal": "^0.7.2",
+        "ext-metal": "^0.7.4",
         "fabricate/nuts-and-bolts": "^0.7.0",
-        "microscrap/metal": "^0.7.3",
-        "scrapyard-io/tubes": "^0.7.0"
+        "microscrap/metal": "^0.7.4",
+        "tubes/contracts": "^0.7.0",
+        "tubes/fonts": "^0.7.0",
+        "tubes/framebuffers": "^0.7.0",
+        "tubes/human-input": "^0.7.0",
+        "tubes/inputs": "^0.7.0",
+        "tubes/rendering": "^0.7.0",
+        "tubes/windows": "^0.7.0"
     },
     "require-dev": {
         "pestphp/pest": "^4"

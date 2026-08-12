@@ -18,6 +18,7 @@ Owns MTLDevice + queue + offscreen RGBA8 MTLTexture. `isHeadless()` → `true`. 
 ### PanelIC flush (dirty + PARTIAL + fast pack)
 
 - Draw paths (`setPixel` / `setSegment` / `fill`) track inclusive dirty rects; `fill` → `markAllDirty()`.
+- Windowed / headless `setSegment` uses **`mtl_texture_fill_rect`** (ext-metal **0.7.4+**) — one `replaceRegion` per solid rect. Do not loop `writePixel`.
 - `flush($spec, as_array: true)` coalesces dirty → `DumpedBuffer` with `RenderType::FULL` (whole surface) or `PARTIAL` (origin + size). Empty dirty → `[]` / `''`.
 - Pack host words `0xRRGGBBAA` via chunked `pack()`: ROW_MAJOR B32 MSB → `N*`; ROW_MAJOR B16 → RGB565 from R/G/B channels (**not** low-16-bits-as-RGB565). Other specs fall back to `PixelStore`.
 - GPU readback: one `mtl_texture_read_rgba8()` per flush (`readTextureWords`), then slice dirty regions in PHP (no region-read API). SPI only receives dirty bytes via PARTIAL origins.

@@ -21,10 +21,9 @@ Metal companion for ScrapyardIO **tubes 0.7** — Deferred framebuffer key `meta
 ## Requirements
 
 * PHP 8.4+
-* **macOS** + **ext-metal** ^0.7.2
-* `microscrap/metal` ^0.7.2
-* `scrapyard-io/tubes` ^0.7.0
-
+* **macOS** + **ext-metal** ^0.7.4
+* `microscrap/metal` ^0.7.4
+* Tubes **components** (not `scrapyard-io/tubes`): `tubes/contracts`, `tubes/framebuffers`, `tubes/rendering`, `tubes/fonts`, `tubes/windows`, `tubes/human-input`, `tubes/inputs`
 ## Installation
 
 ```bash

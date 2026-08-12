@@ -1,5 +1,10 @@
 # OKF log
 
+## 2026-08-12
+
+- **Composer require**: dropped kitchen-sink `scrapyard-io/tubes`. Require only used tubes components: `contracts`, `framebuffers`, `rendering`, `fonts` (DrawsText), `windows`, `human-input`, `inputs`.
+- **setSegment fill_rect**: `MetalHandledFramebuffer::setSegment` uses `mtl_texture_fill_rect` (ext-metal / microscrap/metal **0.7.4**) — one region upload per rect. Requires `ext-metal` `^0.7.4`, `microscrap/metal` `^0.7.4`. Package version **0.7.3**.
+
 ## 2026-08-11
 
 - **PanelIC dirty+PARTIAL+RGB565**: `MetalHandledFramebuffer` tracks dirty rects; headless `flush` coalesces → `FULL`/`PARTIAL` `DumpedBuffer`s; one shared `mtl_texture_read_rgba8` then slice+pack; fast ROW_MAJOR B32/B16 pack (`0xRRGGBBAA` → RGB565, not low-16 bug); `damageGranularity` pixel when headless; `preservesContentsOnPresent` when headless; `MetalRenderer2D` `fillCircle`/`drawCircle` use `deferDirty`. Pest mirrors ogx/sdl3. Windowed present unchanged.

@@ -11,14 +11,14 @@ Before changing GFX/framebuffer code **for this package**:
 3. Prefer `status: stable` concepts; treat `deprecated` as historical only. New/changed concepts stay `status: draft` until a human verifies them.
 4. When you learn something durable about **this package**, update the affected `.okf` concept(s) and append `.okf/log.md`.
 5. Keep the `.okf` bundle at the **package root** only — do not nest extra `.okf` folders under `src/`.
-6. Bindings knowledge → `microscrap/metal`. Tubes factory/PixelStore → `scrapyard-io/tubes`. Extension build → `php-io-extensions/metal`.
+6. Bindings knowledge → `microscrap/metal`. Tubes PixelStore/factories → discrete `tubes/*` components (never blanket `scrapyard-io/tubes` in this package’s `require`). Extension build → `php-io-extensions/metal`.
 7. **Always** keep the `.okf/` bundle current when changing API or registration; append `.okf/log.md`.
 8. **NEVER** commit or push `vendor/`.
 
 ## Package rules (quick) — 0.7.x
 
-- Composer: `microscrap/metal-gfx` **0.7.0**. PHP `^8.4|^8.5|^8.6`.
-- Depends on `microscrap/metal` ^0.7.3, `ext-metal` ^0.7.3, `scrapyard-io/tubes`, `fabricate/nuts-and-bolts` (`^0.7.0`).
+- Composer: `microscrap/metal-gfx` **0.7.3**. PHP `^8.4|^8.5|^8.6`.
+- Depends on `microscrap/metal` ^0.7.4, `ext-metal` ^0.7.4, `fabricate/nuts-and-bolts` (`^0.7.0`), and tubes components only: `tubes/{contracts,framebuffers,rendering,fonts,windows,human-input,inputs}`.
 - Provider registers **`extendDeferred('metal', …)`** — **not** `extendManaged`. Soft Managed = tubes `full`/`dirty`/`page` only.
 - Provider also **`WindowFactory::extend('metal', MetalWindowHandler::class)`** + publish `tubes-windows-metal`.
 - `MetalHandledFramebuffer` implements **`DeferredFramebuffer`**.

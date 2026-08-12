@@ -25,6 +25,8 @@ class MetalWindowHandler extends WindowHandler
 
     protected MetalInputHandler $input_handler;
 
+    protected bool $vsync = true;
+
     public function __construct(string $title, int $width, int $height)
     {
         parent::__construct($title, $width, $height);
@@ -80,6 +82,7 @@ class MetalWindowHandler extends WindowHandler
 
         $this->device = $device;
         $this->window = $window;
+        $this->setVsync($this->vsync);
     }
 
     protected function bindFramebuffer(): DeferredFramebuffer
@@ -164,5 +167,24 @@ class MetalWindowHandler extends WindowHandler
     public function metalDevice(): int
     {
         return $this->device;
+    }
+
+    /**
+     * CAMetalLayer display sync when ext-metal exposes {@see mtl_window_set_display_sync()}.
+     */
+    public function setVsync(bool $on): static
+    {
+        $this->vsync = $on;
+
+        if ($this->window > 0 && function_exists('mtl_window_set_display_sync')) {
+            mtl_window_set_display_sync($this->window, $on);
+        }
+
+        return $this;
+    }
+
+    public function vsync(): bool
+    {
+        return $this->vsync;
     }
 }

@@ -24,6 +24,7 @@ Before changing GFX/framebuffer code **for this package**:
 - `MetalHandledFramebuffer` implements **`DeferredFramebuffer`**.
 - **Headless** `::sized()` = device + queue + offscreen RGBA8 `MTLTexture`.
 - **Windowed** `MetalWindowHandler` + `::attachedTo()` — `present()` uses `mtl_window_present_texture` (no PHP flush).
+- **VSync**: `MetalWindowHandler::setVsync` → `mtl_window_set_display_sync` when ext-metal provides it. VSync OFF + Uncapped must be allowed to exceed the panel refresh.
 - **Human Input**: `MetalInputHandler` + `MetalWindowHandler::inputHandler()`; `pollNative()` fans out after `mtl_app_poll` (do not double-pump in `InputHandler::poll`).
 - `MetalRenderer2D` implements tubes `DrawingAPI` against a borrowed framebuffer (`fill` → Metal texture clear).
 - Text: `use DrawsText` (tubes concern) — do not reimplement glyph rasterization in metal-gfx.

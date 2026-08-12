@@ -28,7 +28,7 @@ Owns MTLDevice + queue + offscreen RGBA8 MTLTexture. `isHeadless()` → `true`. 
 
 ## Windowed — `::attachedTo($window, $spec, $w, $h)`
 
-Requires `mtl_window_attach_device` first. Borrows the window device (`owns_device = false`); owns queue + texture. `isHeadless()` → `false`. `present()` → `mtl_window_present_texture($window, $texture)` (GPU blit; no PHP flush remux). Headless-only PanelIC flush: windowed `flush` presents and returns empty.
+Requires `mtl_window_attach_device` first. Borrows the window device (`owns_device = false`); owns queue + texture. `isHeadless()` → `false`. `present()` → `mtl_window_present_texture($window, $texture)` (GPU blit; no PHP flush remux). Headless-only PanelIC flush: windowed `flush` presents and returns empty. Present lock is on [`MetalWindowHandler::setVsync`](vsync.md), not this class.
 
 ## App usage
 
@@ -38,3 +38,9 @@ Framebuffer::driver('metal')->size(320, 240)->format($spec)->create(); // headle
 // windowed via WindowHandler:
 Window::driver('metal')->title('x')->size(640, 480)->open();
 ```
+
+# Related
+
+- [MetalWindowHandler](metal-window-handler.md)
+- [Metal VSync](vsync.md)
+- [MetalRenderer2D](metal-renderer-2d.md)

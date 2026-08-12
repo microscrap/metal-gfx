@@ -31,6 +31,7 @@ sources:
 | `pollNative()` | `mtl_app_poll` (+ menu `quit` → terminate) then `inputHandler()->poll()` |
 | `shouldClose()` | `mtl_window_should_close` \|\| `mtl_app_should_quit` |
 | `close()` / `destroyNative()` | Drop FB first, then destroy window + release device; does **not** call `mtl_app_terminate` |
+| `setVsync(bool)` | Calls `mtl_window_set_display_sync` when ext-metal provides it; otherwise stores the flag. VSync OFF + Uncapped must be allowed to exceed the panel refresh. |
 
 Human Input: construct builds a [`MetalInputHandler`](metal-input-handler.md); expose via `inputHandler()`. Requires **ext-metal ≥ 0.7.3**.
 
@@ -45,3 +46,9 @@ $window->close();
 ```
 
 Requires **ext-metal ≥ 0.7.2** (`Window::getDevice`, `Window::presentTexture`).
+
+# Related
+
+- [MetalHandledFramebuffer](metal-handled-framebuffer.md)
+- [Metal VSync](vsync.md)
+- [MetalInputHandler](metal-input-handler.md)

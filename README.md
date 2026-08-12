@@ -14,6 +14,7 @@ Metal companion for ScrapyardIO **tubes 0.7** — Deferred framebuffer key `meta
 * `MetalHandledFramebuffer` extends `DeferredFramebuffer` (not Managed / not `PixelStore`)
 * **Headless** — system `MTLDevice` + queue + offscreen RGBA8 `MTLTexture`
 * **Windowed** — `MetalWindowHandler` opens an `NSWindow`; `present()` blits texture → `CAMetalLayer` (**no PHP flush**)
+* **`setVsync(bool)`** — `mtl_window_set_display_sync` when ext-metal provides it. VSync OFF + Uncapped must be allowed to exceed the panel refresh.
 * **`MetalRenderer2D`** — full tubes `DrawingAPI` + `DrawsText` into the borrowed Metal framebuffer (`fill` uses GPU texture clear)
 * Framebuffer key `metal` via `extendDeferred` + publish tag `tubes-framebuffers-metal`
 * Window slug `metal` via `WindowFactory::extend` + publish tag `tubes-windows-metal`

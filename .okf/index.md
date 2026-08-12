@@ -21,6 +21,7 @@ Read this index first; open only the concepts needed for the task.
 * [MetalGfxServiceProvider](core/service-provider.md) - `extendDeferred('metal')` + `WindowFactory::extend('metal')`.
 * [MetalHandledFramebuffer](core/metal-handled-framebuffer.md) - Headless `sized` / windowed `attachedTo`.
 * [MetalWindowHandler](core/metal-window-handler.md) - Visible OS window; present via GPU blit; poll fans out to input.
+* [Metal VSync](core/vsync.md) - `setVsync` / `mtl_window_set_display_sync`; Uncapped must exceed the panel. (`draft`)
 * [MetalInputHandler](core/metal-input-handler.md) - Human Input companion over `mtl_input_*` (0.7.3+).
 * [MetalRenderer2D](core/metal-renderer-2d.md) - Full DrawingAPI into borrowed Metal framebuffer.
 

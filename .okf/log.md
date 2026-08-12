@@ -2,6 +2,7 @@
 
 ## 2026-08-12
 
+- **VSync core**: [Metal VSync](core/vsync.md) — `mtl_window_set_display_sync` when the ABI exists. Verified 2026-08-12 without the ABI: VSync OFF + Uncapped still exceeded a 120 Hz panel (`presentMs` ~0.1 ms, delivered 121–131 Hz).
 - **Composer require**: dropped kitchen-sink `scrapyard-io/tubes`. Require only used tubes components: `contracts`, `framebuffers`, `rendering`, `fonts` (DrawsText), `windows`, `human-input`, `inputs`.
 - **setSegment fill_rect**: `MetalHandledFramebuffer::setSegment` uses `mtl_texture_fill_rect` (ext-metal / microscrap/metal **0.7.4**) — one region upload per rect. Requires `ext-metal` `^0.7.4`, `microscrap/metal` `^0.7.4`. Package version **0.7.3**.
 

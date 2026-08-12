@@ -17,6 +17,7 @@ generated: { by: cursor-agent/grok-4.5, at: "2026-08-09T04:15:00Z" }
 | Namespace | `Microscrap\GFX\Metal\` |
 | Role | Deferred `MetalHandledFramebuffer` + live `MetalWindowHandler` |
 | Platform | **macOS** |
+| VSync | `setVsync` → `mtl_window_set_display_sync` when the ABI exists; otherwise the flag is stored. VSync OFF + Uncapped must exceed the panel. |
 
 # Lanes
 
@@ -24,4 +25,4 @@ generated: { by: cursor-agent/grok-4.5, at: "2026-08-09T04:15:00Z" }
 |------|----------------|
 | Managed (tubes) | `full` / `dirty` / `page` |
 | Deferred framebuffer (this) | `metal` — headless MTLTexture default |
-| Window (this) | `metal` — `MetalWindowHandler` (NSWindow + presentTexture) |
+| Window (this) | `metal` — `MetalWindowHandler` (NSWindow + presentTexture); `setVsync` when ext-metal has `mtl_window_set_display_sync` |

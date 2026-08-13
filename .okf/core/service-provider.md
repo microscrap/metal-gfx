@@ -9,6 +9,8 @@ generated: { by: cursor-agent/grok-4.5, at: "2026-08-09T04:15:00Z" }
 
 # Boot
 
+Skip the whole boot when `ext-metal` is not loaded (Jetson dual-host install).
+
 ```php
 // Framebuffers — Deferred lane
 $this->publishes([

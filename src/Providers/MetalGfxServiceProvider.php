@@ -18,6 +18,10 @@ class MetalGfxServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if (! extension_loaded('metal')) {
+            return;
+        }
+
         if ($this->container->runningInConsole()) {
             $this->publishes([
                 __DIR__.'/../../config/framebuffers/metal.php' => $this->container->configPath('framebuffers/metal.php'),

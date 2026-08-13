@@ -32,6 +32,12 @@ sources:
 2. menu quit → terminate
 3. `$this->inputHandler()->poll()` — fan-out into Human Input devices
 
+`poll()` mutates existing Keyboard / Mouse / GameController devices (cached `KeyCode::cases()` and `GamepadButton::cases()`). Do **not** `new Mouse` / `new GameController` / `new DigitalButton` every frame.
+
+Mouse position uses scalar `mtl_input_mouse_x` / `mtl_input_mouse_y` / `mtl_input_mouse_scroll_y` (ext-metal hashtable `[x,y]` APIs retain ~112 B per poll). GameController count is queried every poll so Apple's list can populate after wireless discovery; when count is 0 return without allocating; when count changes rebuild once; otherwise `setPressed` / `setAxes` in place. `Menu::pollAction` must return interned empty (`RETURN_EMPTY_STRING`), not `RETURN_CTORW` of a fresh `ZVAL_STRING("")`.
+
+Tetriminos Metal soak (debug-641660): PLAY `phpUsedMb` 11.18→11.23 over 7k frames with one GCController (`loopPadCount=1`); poll/pump/present deltas 0.
+
 Access via `MetalWindowHandler::inputHandler()` and wrap with `EngineInput` when needed.
 
 # Coordinates

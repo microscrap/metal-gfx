@@ -23,6 +23,12 @@ use ScrapyardIO\Tubes\Inputs\InputHandler;
  */
 class MetalInputHandler extends InputHandler
 {
+    /** @var list<KeyCode>|null */
+    private ?array $keyCodes = null;
+
+    /** @var list<GamepadButton>|null */
+    private ?array $gamepadButtons = null;
+
     public function __construct(
         protected ?MetalWindowHandler $window_handler = null,
     ) {
@@ -60,7 +66,8 @@ class MetalInputHandler extends InputHandler
     protected function refreshKeyboard(): void
     {
         $keyboard = $this->keyboard ?? new Keyboard;
-        foreach (KeyCode::cases() as $code) {
+        $this->keyCodes ??= KeyCode::cases();
+        foreach ($this->keyCodes as $code) {
             $keyboard->setKey($code->name, mtl_input_key_down($code));
         }
         $this->keyboard = $keyboard;
@@ -75,40 +82,71 @@ class MetalInputHandler extends InputHandler
             $height = (float) $this->window_handler->height();
         }
 
-        $pos = mtl_input_mouse_position($window);
-        $x = (float) ($pos[0] ?? 0.0);
-        $y = (float) ($pos[1] ?? 0.0);
-
-        // AppKit content Y is up; tubes framebuffer coords are top-left / Y down.
-        if ($window > 0 && $height > 0.0) {
-            $y = $height - $y;
+        if (function_exists('mtl_input_mouse_x')) {
+            $x = (float) mtl_input_mouse_x($window);
+            $y = (float) mtl_input_mouse_y($window);
+            if ($window > 0 && $height > 0.0) {
+                $y = $height - $y;
+            }
+            $wheel = (float) mtl_input_mouse_scroll_y();
+        } else {
+            $x = 0.0;
+            $y = 0.0;
+            $wheel = 0.0;
+            $existing = $this->mouse;
+            if (! is_null($existing)) {
+                $x = (float) $existing->x();
+                $y = (float) $existing->y();
+                $wheel = (float) $existing->wheelDelta();
+            }
         }
 
-        $scroll = mtl_input_mouse_scroll_delta();
-        $wheel = (float) ($scroll[1] ?? 0.0);
+        $leftDown = mtl_input_mouse_button_down(MetalMouseButton::LEFT);
+        $rightDown = mtl_input_mouse_button_down(MetalMouseButton::RIGHT);
+        $middleDown = mtl_input_mouse_button_down(MetalMouseButton::MIDDLE);
 
-        $buttons = [
-            new DigitalButton(
-                MouseButton::LEFT->value,
-                mtl_input_mouse_button_down(MetalMouseButton::LEFT),
-            ),
-            new DigitalButton(
-                MouseButton::RIGHT->value,
-                mtl_input_mouse_button_down(MetalMouseButton::RIGHT),
-            ),
-            new DigitalButton(
-                MouseButton::MIDDLE->value,
-                mtl_input_mouse_button_down(MetalMouseButton::MIDDLE),
-            ),
-        ];
+        $mouse = $this->mouse;
+        if (is_null($mouse)) {
+            $this->mouse = new Mouse($x, $y, [
+                new DigitalButton(MouseButton::LEFT->value, $leftDown),
+                new DigitalButton(MouseButton::RIGHT->value, $rightDown),
+                new DigitalButton(MouseButton::MIDDLE->value, $middleDown),
+            ], $wheel);
 
-        $this->mouse = new Mouse($x, $y, $buttons, $wheel);
+            return;
+        }
+
+        $mouse->setPosition($x, $y)->setWheelDelta($wheel);
+        foreach ($mouse->buttons() as $button) {
+            match ($button->name()) {
+                MouseButton::LEFT->value => $button->setPressed($leftDown),
+                MouseButton::RIGHT->value => $button->setPressed($rightDown),
+                MouseButton::MIDDLE->value => $button->setPressed($middleDown),
+                default => null,
+            };
+        }
     }
 
     protected function refreshGameControllers(): void
     {
-        $controllers = [];
         $count = mtl_input_gamepad_count();
+        if ($count <= 0) {
+            return;
+        }
+
+        if (count($this->game_controllers) !== $count) {
+            $this->rebuildGameControllers($count);
+
+            return;
+        }
+
+        $this->updateGameControllers($count);
+    }
+
+    protected function rebuildGameControllers(int $count): void
+    {
+        $this->gamepadButtons ??= GamepadButton::cases();
+        $controllers = [];
 
         for ($index = 0; $index < $count; $index++) {
             $name = mtl_input_gamepad_name($index);
@@ -118,18 +156,21 @@ class MetalInputHandler extends InputHandler
 
             $controls = [];
 
-            foreach (GamepadButton::cases() as $button) {
+            foreach ($this->gamepadButtons as $button) {
                 $controls[] = new DigitalButton(
                     $button->name,
                     mtl_input_gamepad_button_down($index, $button),
                 );
             }
 
-            $left_trigger = $this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_TRIGGER));
-            $right_trigger = $this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::RIGHT_TRIGGER));
-            $controls[] = new AnalogButton(GamepadAxis::LEFT_TRIGGER->name, $left_trigger);
-            $controls[] = new AnalogButton(GamepadAxis::RIGHT_TRIGGER->name, $right_trigger);
-
+            $controls[] = new AnalogButton(
+                GamepadAxis::LEFT_TRIGGER->name,
+                $this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_TRIGGER)),
+            );
+            $controls[] = new AnalogButton(
+                GamepadAxis::RIGHT_TRIGGER->name,
+                $this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::RIGHT_TRIGGER)),
+            );
             $controls[] = new AnalogStick(
                 'LEFT',
                 $this->clampAxis(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_X)),
@@ -145,7 +186,47 @@ class MetalInputHandler extends InputHandler
         }
 
         $this->game_controllers = $controllers;
-        $this->game_pads = [];
+    }
+
+    protected function updateGameControllers(int $count): void
+    {
+        $this->gamepadButtons ??= GamepadButton::cases();
+
+        foreach ($this->game_controllers as $index => $controller) {
+            if ($index >= $count) {
+                break;
+            }
+
+            foreach ($controller->digitalButtons() as $i => $button) {
+                $enum = $this->gamepadButtons[$i] ?? null;
+                if (is_null($enum)) {
+                    continue;
+                }
+                $button->setPressed(mtl_input_gamepad_button_down($index, $enum));
+            }
+
+            $analogs = $controller->analogButtons();
+            if (isset($analogs[0])) {
+                $analogs[0]->setValue($this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_TRIGGER)));
+            }
+            if (isset($analogs[1])) {
+                $analogs[1]->setValue($this->clamp01(mtl_input_gamepad_axis($index, GamepadAxis::RIGHT_TRIGGER)));
+            }
+
+            $sticks = $controller->sticks();
+            if (isset($sticks[0])) {
+                $sticks[0]->setAxes(
+                    $this->clampAxis(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_X)),
+                    $this->clampAxis(mtl_input_gamepad_axis($index, GamepadAxis::LEFT_Y)),
+                );
+            }
+            if (isset($sticks[1])) {
+                $sticks[1]->setAxes(
+                    $this->clampAxis(mtl_input_gamepad_axis($index, GamepadAxis::RIGHT_X)),
+                    $this->clampAxis(mtl_input_gamepad_axis($index, GamepadAxis::RIGHT_Y)),
+                );
+            }
+        }
     }
 
     protected function clampAxis(float $value): float
